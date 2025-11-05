@@ -30,9 +30,13 @@ jobs:
     - name: Prepare platform name
       id: platform
       run: |
-        # Convert platform to valid name for cache keys and artifacts (replace / with -)
         PLATFORM_NAME=$(echo "${{ matrix.platform }}" | sed 's/\//-/g')
         echo "name=${PLATFORM_NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: Compute lowercase repository owner
+      id: repo
+      run: |
+        echo "owner_lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -72,7 +76,7 @@ jobs:
         platforms: ${{ matrix.platform }}
         cache-from: type=local,src=/tmp/.buildx-cache
         cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-        outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/acestream-orchestrator,push-by-digest=true,name-canonical=true,push=true
+        outputs: type=image,name=ghcr.io/${{ steps.repo.outputs.owner_lc }}/acestream-orchestrator,push-by-digest=true,name-canonical=true,push=true
 
     - name: Export digest
       run: |
@@ -100,6 +104,7 @@ jobs:
       packages: write
     needs:
       - build
+
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
@@ -118,6 +123,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute lowercase repository owner
+        id: repo
+        run: |
+          echo "owner_lc=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Determine Docker image tag
         id: vars
         run: |
@@ -133,10 +143,12 @@ jobs:
         working-directory: /tmp/digests
         run: |
           IMAGE_TAG="${{ steps.vars.outputs.tag }}"
-          docker buildx imagetools create -t "ghcr.io/${{ github.repository_owner }}/acestream-orchestrator:${IMAGE_TAG}" \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/acestream-orchestrator@sha256:%s ' *)
+          OWNER="${{ steps.repo.outputs.owner_lc }}"
+          docker buildx imagetools create -t "ghcr.io/${OWNER}/acestream-orchestrator:${IMAGE_TAG}" \
+            $(printf 'ghcr.io/${OWNER}/acestream-orchestrator@sha256:%s ' *)
 
       - name: Inspect image
         run: |
+          OWNER="${{ steps.repo.outputs.owner_lc }}"
           IMAGE_TAG="${{ steps.vars.outputs.tag }}"
-          docker buildx imagetools inspect "ghcr.io/${{ github.repository_owner }}/acestream-orchestrator:${IMAGE_TAG}"
+          docker buildx imagetools inspect "ghcr.io/${OWNER}/acestream-orchestrator:${IMAGE_TAG}"
